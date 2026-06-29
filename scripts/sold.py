@@ -41,6 +41,7 @@ sold_files = [
     'CRMLSSold202602.csv',
     'CRMLSSold202603.csv',
     'CRMLSSold202604.csv',
+    'CRMLSSold202605.csv'
 ]
 
 print(f"Loading {len(sold_files)} sold files:")
