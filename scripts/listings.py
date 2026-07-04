@@ -6,7 +6,7 @@ import os
 # --- LISTINGS COMBINATION ---
 
 data_path = 'data/raw/'
-output_path = 'data/processed'
+output_path = 'data/processed/'
 
 # Find all listing files
 listing_files = sorted(glob.glob(data_path + 'CRMLSListing*.csv'))
