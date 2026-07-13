@@ -95,8 +95,27 @@ print(f"   listings: {[c for c in date_cols_listings if c in listings.columns]}"
 # Removing unnecessary/redundant columns
 # ---------------------------------------
 
-cols_to_drop_sold = []
-cols_to_drop_listings = []
+cols_to_drop_common = [
+    # 100% empty
+    'TaxYear', 'TaxAnnualAmount', 'AboveGradeFinishedArea', 'FireplacesTotal',
+    'ElementarySchoolDistrict', 'CoveredSpaces', 'BusinessType', 'MiddleOrJuniorSchoolDistrict',
+    # near-total missing (>90% and not needed for anything in handbook)
+    'BelowGradeFinishedArea', 'BuilderName', 'LotSizeDimensions', 'BuildingAreaTotal', 'CoBuyerAgentFirstName',
+    'ElementarySchool', 'MiddleOrJuniorSchool', 'HighSchool',
+    'BuyerAgencyCompensation', 'BuyerAgencyCompensationType',
+    # co-listing fields not required
+    'CoListAgentFirstName', 'CoListAgentLastName', 'CoListOfficeName'
+]
+cols_to_drop_sold = cols_to_drop_common + [
+    # near-total missing in sold
+    'WaterfrontYN', "BasementYN",
+    # pipeline metadata, not transaction data
+    'OriginatingSystemName', 'OriginatingSystemSubName',
+]
+
+cols_to_drop_listings = cols_to_drop_common + [
+    # none that I can find
+]
 
 before_cols_sold = sold.shape[1]
 before_cols_listings = listings.shape[1]
@@ -139,9 +158,75 @@ def add_invalid_numeric_flags(df):
 
 sold = add_invalid_numeric_flags(sold)
 
-invalid_flag_cols = ['invalid_price_flag', 'invalid_living_area_flag', 'invalid_dom_flag', 'invalid_bedrooms_flag',
+invalid_flag_cols = ['invalid_price_flag', 'invalid_livingarea_flag', 'invalid_dom_flag', 'invalid_bedrooms_flag',
                      'invalid_bathrooms_flag']
 
 print("\nInvalid numeric value flags (sold dataset):")
 for flag in invalid_flag_cols:
     print(f" {flag}: {sold[flag].sum():,} flagged rows")
+
+# --------------------------------
+# Date Consistency Checks
+# -------------------------------
+
+# expected order: ListingContractDate <= PurchaseContractDate <= CloseDate
+sold['listing_after_close_flag'] = sold['ListingContractDate'] > sold['CloseDate']
+sold['purchase_after_close_flag'] = sold['PurchaseContractDate'] > sold['CloseDate']
+sold['negative_timeline_flag'] = (
+    sold['listing_after_close_flag'] | sold['purchase_after_close_flag']
+)
+
+print("\nDate consistency flags:")
+print(f"   listing_after_close_flag: {sold['listing_after_close_flag'].sum():,} rows")
+print(f"   purchase_after_close_flag: {sold['purchase_after_close_flag'].sum():,} rows")
+print(f"   negative_timeline_flag (either): {sold['negative_timeline_flag'].sum():,} rows")
+
+
+# ----------------------------
+# Geographic data checks
+# ---------------------------
+def add_geo_flags(df):
+    if 'Latitude' not in df.columns or 'Longitude' not in df.columns:
+        return df
+    
+    df['missing_coords_flag'] = df['Latitude'].isnull() | df['Longitude'].isnull()
+    df['zero_coords_flag'] = (df['Latitude'] == 0) | (df['Longitude'] == 0)
+    # California longitude should be negative, if positive, likely an error
+    df['longitude_sign_flag'] = df['Longitude'] > 0
+
+    # Rough CA bounding box as check against implausible coordinates
+    ca_lat_range = (32.0, 42.5)
+    ca_lon_range = (-125.0, -114.0)
+    df['implausible_coords_flag'] = ~(
+        df['Latitude'].between(*ca_lat_range) &
+        df['Longitude'].between(*ca_lon_range)
+    ) & ~df['missing_coords_flag']
+
+    return df
+
+sold = add_geo_flags(sold)
+listings = add_geo_flags(listings)
+
+geo_flag_cols = ['missing_coords_flag', 'zero_coords_flag', 'longitude_sign_flag', 'implausible_coords_flag']
+
+print("\nGeographic data quality flags (sold dataset):")
+for flag in geo_flag_cols:
+    if flag in sold.columns:
+        print(f"   {flag}: {sold[flag].sum():,} rows")
+    else:
+        print(f"   {flag}: skipped (Latitude/Longitude not found)")
+
+
+# -----------------------
+# Save cleaned datasets
+# -----------------------
+sold.to_csv('sold_cleaned.csv', index=False)
+listings.to_csv('listings_cleaned.csv', index=False)
+
+print("\n" + "=" * 70)
+print("FINAL ROW COUNTS")
+print("=" * 70)
+print(f"  sold_cleaned.csv:           {len(sold):,} rows, {sold.shape[1]} columns")
+print(f"  listings_cleaned.csv:       {len(listings):,} rows. {listings.shape[1]} columns")
+print("\nNote: no rows were delted blased on flags in this script - all invalid/inconsistent records are flagged,")
+print("not removed, per the handbook. Decide in Week 7 (IQR outlier pass) whether flagged records should be excluded.")
