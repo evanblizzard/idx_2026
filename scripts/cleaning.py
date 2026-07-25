@@ -159,7 +159,7 @@ def add_invalid_numeric_flags(df):
 sold = add_invalid_numeric_flags(sold)
 
 invalid_flag_cols = ['invalid_price_flag', 'invalid_livingarea_flag', 'invalid_dom_flag', 'invalid_bedrooms_flag',
-                     'invalid_bathrooms_flag']
+                    'invalid_bathrooms_flag']
 
 print("\nInvalid numeric value flags (sold dataset):")
 for flag in invalid_flag_cols:
@@ -228,5 +228,5 @@ print("FINAL ROW COUNTS")
 print("=" * 70)
 print(f"  sold_cleaned.csv:           {len(sold):,} rows, {sold.shape[1]} columns")
 print(f"  listings_cleaned.csv:       {len(listings):,} rows. {listings.shape[1]} columns")
-print("\nNote: no rows were delted blased on flags in this script - all invalid/inconsistent records are flagged,")
+print("\nNote: no rows were deleted blased on flags in this script - all invalid/inconsistent records are flagged,")
 print("not removed, per the handbook. Decide in Week 7 (IQR outlier pass) whether flagged records should be excluded.")
