@@ -5,34 +5,50 @@ from shapely.geometry import Point
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, '..', 'data', 'processed')
-sold = pd.read_csv(os.path.join(DATA_DIR, 'sold_with_rates.csv'))
-listings = pd.read_csv(os.path.join(DATA_DIR, 'listings_with_rates.csv'))
+sold = pd.read_csv(os.path.join(DATA_DIR, 'sold_cleaned.csv'))
+listings = pd.read_csv(os.path.join(DATA_DIR, 'listings_cleaned.csv'))
 
 # read california school district boundary geojson
 school_districts = gpd.read_file("data/DistrictAreas.geojson")
 
-print(school_districts.shape)
-print(school_districts.columns)
-print(school_districts.crs)
-school_districts.head()
+print(f"Loaded {school_districts.shape[0]} district polygons, {school_districts.shape[1]} columns")
+print(f"CRS: {school_districts.crs}")
 
-unified_districts = school_districts[school_districts["DistrictType"] == "Unified"]
-print(unified_districts.shape)
-unified_districts["DistrictType"].unique()
+unified_districts = school_districts[school_districts["DistrictType"] == "Unified"].copy()
 
+print(f"Filtered to {len(unified_districts)} Unified Districts "
+      f"(types available: {sorted(school_districts['DistrictType'].unique())})")
 
 def add_school_district(df, unified_districts):
     df = df.copy()
 
-    df["geometry"] = df.apply(
-        lambda row: Point(row["Longitude"], row["Latitude"]), axis=1
-    )
-    # Correct: label as EPSG:4326 because that's what the raw values actually are
-    gdf = gpd.GeoDataFrame(df, geometry="geometry", crs="EPSG:4326")
+    # ensuring a row has usable coordinates
+    has_coords = df['Latitude'].notna() & df['Longitude'].notna()
+    # checking for coords and rows WITHOUT the implausible coords flag
+    if 'implausible_coords_flag' in df.columns:
+        valid = has_coords & ~df['implausible_coords_flag']
+    else:
+        valid = has_coords
 
-    # Now actually transform the coordinates to match unified_districts' CRS
+    # create new column filled with missing values
+    df['DistrictName'] = pd.NA
+    # if there are now valid rows, abort and return the df
+    if valid.sum() == 0:
+        return df
+
+    # give me only rows where the valid is true
+    sub = df.loc[valid]
+    # turn longitude and latitude columns into point geometry objects
+    geometry = gpd.points_from_xy(sub['Longitude'], sub['Latitude'])
+    # make a geodataframe
+    # sub[[]] means sub but with none of the original columns - just something to hold the geometry 
+    gdf = gpd.GeoDataFrame(sub[[]], geometry=geometry, crs="EPSG:4326")
+    # unified_districts.crs is EPSG:3857, so im converting
     gdf = gdf.to_crs(unified_districts.crs)
-    gdf.geometry.iloc[0]
+
+    # spatial join to match rows based on geometry
+    # for every pont in gdf, it checks if it is within a polygon in "unified_districts"
+    # left means keep every row from gdf even if no polygon contains it
     joined = gpd.sjoin(
         gdf,
         unified_districts[["DistrictName", "geometry"]],
@@ -40,43 +56,36 @@ def add_school_district(df, unified_districts):
         predicate="within"
     )
 
-    df["DistrictName"] = joined["DistrictName"].values
+    # sjoin can produce dupe rows if a point sits on a shared boundary
+    # between 2 district pollgyons; keeping first match per original row
+    joined = joined[~joined.index.duplicated(keep="first")]
+
+
+    # everything above (sub, gdf, joined) only ever contained the "valid rows"
+    # this takes those results and puts them back in the right spots in the original full sized df
+    df.loc[valid, "DistrictName"] = joined["DistrictName"].values
     return df
 
 sold = add_school_district(sold, unified_districts)
 listings = add_school_district(listings, unified_districts)
 
-# Sanity Check
-print("Sold - missing district:", sold["DistrictName"].isna().sum())
-print("Listing - missing district:", listings["DistrictName"].isna().sum())
+# Sanity Checks
+print("\n=== Match rates ===")
+print(f"sold:     {sold['DistrictName'].notna().sum():,} / {len(sold):,} matched")
+print(f"listings: {listings['DistrictName'].notna().sum():,} / {len(listings):,} matched")
+ 
+for label, df in [("sold", sold), ("listings", listings)]:
+    valid_coords = df['Latitude'].notna() & df['Longitude'].notna()
+    if 'implausible_coords_flag' in df.columns:
+        valid_coords &= ~df['implausible_coords_flag']
+    unmatched_valid = df[valid_coords & df['DistrictName'].isna()]
+    print(f"\n[{label}] {len(unmatched_valid):,} rows had usable coordinates but no district match "
+          f"(likely non-Unified areas, or points just outside CDE's mapped boundaries)")
+    if len(unmatched_valid) > 0:
+        print(unmatched_valid[['Latitude', 'Longitude']].describe())
 
-print(len(sold), len(listings))
-print(sold["DistrictName"].notna().sum(), "/", len(sold), "matched")
-print(listings["DistrictName"].notna().sum(), "/", len(listings), "matched")
 
-print(sold[["Latitude", "Longitude"]].isna().sum())
-print(listings[["Latitude", "Longitude"]].isna().sum())
-
-from shapely.geometry import Point
-test_point = gpd.GeoDataFrame(
-    {"geometry": [Point(-118.2437, 34.0522)]},
-    crs="EPSG:4326"
-).to_crs(unified_districts.crs)
-
-match = gpd.sjoin(test_point, unified_districts[["DistrictName", "geometry"]], how="left", predicate="within")
-print(match)
-
-# rows with valid coordinates but no district match
-unmatched_valid = sold[sold["DistrictName"].isna() & sold["Latitude"].notna()]
-print(unmatched_valid[["Latitude", "Longitude"]].describe())
-print(unmatched_valid[["Latitude", "Longitude"]].sample(10))
-
-CA_LAT_MIN, CA_LAT_MAX = 32.0, 42.5
-CA_LON_MIN, CA_LON_MAX = -125.0, -113.5
-
-bad_coords = unmatched_valid[
-    (unmatched_valid["Latitude"] < CA_LAT_MIN) | (unmatched_valid["Latitude"] > CA_LAT_MAX) |
-    (unmatched_valid["Longitude"] < CA_LON_MIN) | (unmatched_valid["Longitude"] > CA_LON_MAX)
-]
-print(len(bad_coords), "rows have coordinates outside California's bounding box")
-print(bad_coords[["Latitude", "Longitude"]].head(20))
+# saving new datasets
+sold.to_csv(os.path.join(DATA_DIR, 'sold_with_district.csv'), index=False)
+listings.to_csv(os.path.join(DATA_DIR, 'listings_with_district.csv'), index=False)
+print("\nSaved sold_with_district.csv and listings_with_district.csv")
