@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import geopandas as gpd
 import os
 
 # -----------------------------------------------
@@ -105,3 +104,10 @@ def segment_summary(df, group_col, label):
  
 by_property_type = segment_summary(sold, 'PropertyType', 'sold')
 by_county = segment_summary(sold, 'CountyOrParish', 'sold')
+
+sold.to_csv(os.path.join(DATA_DIR, 'sold_engineered.csv'), index=False)
+listings.to_csv(os.path.join(DATA_DIR, 'listings_engineered.csv'), index=False)
+
+print(f"\nSaved engineered datasets:")
+print(f"   {os.path.join(DATA_DIR, 'sold_engineered.csv')}")
+print(f"   {os.path.join(DATA_DIR, 'listings_engineered.csv')}")
