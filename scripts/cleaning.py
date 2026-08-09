@@ -220,8 +220,10 @@ for flag in geo_flag_cols:
 # -----------------------
 # Save cleaned datasets
 # -----------------------
-sold.to_csv('sold_cleaned.csv', index=False)
-listings.to_csv('listings_cleaned.csv', index=False)
+sold.to_csv(os.path.join(DATA_DIR, 'sold_cleaned.csv'), index=False)
+listings.to_csv(os.path.join(DATA_DIR, 'listings_cleaned.csv'), index=False)
+
+
 
 print("\n" + "=" * 70)
 print("FINAL ROW COUNTS")
