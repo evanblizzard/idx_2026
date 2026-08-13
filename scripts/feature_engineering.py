@@ -25,10 +25,18 @@ def add_market_metrics(df, label):
         if col in df.columns and not pd.api.types.is_datetime64_any_dtype(df[col]):
             df[col] = pd.to_datetime(df[col], errors='coerce')
     # Price Ratio: how close final sale price landed to original ask
+    if {'ClosePrice', 'ListPrice'}.issubset(df.columns):
+        df['price_ratio'] = np.where(
+            df['ListPrice'] > 0,
+            df['ClosePrice'] / df['ListPrice'],
+            np.nan
+        )
     if {'ClosePrice', 'OriginalListPrice'}.issubset(df.columns):
-        df['price_ratio'] = df['ClosePrice'] / df['OriginalListPrice']
-
-        df['close_to_original_list_ratio'] = df['ClosePrice'] / df['OriginalListPrice']
+        df['close_to_original_list_ratio'] = np.where(
+            df['OriginalListPrice'] > 0,
+            df['ClosePrice'] / df['OriginalListPrice'],
+            np.nan
+        )
 
     # price per sq ft: normalizes price across different home sizes
     if {'ClosePrice', 'LivingArea'}.issubset(df.columns):

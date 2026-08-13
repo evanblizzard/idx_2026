@@ -28,7 +28,7 @@ def flag_outliers(df: pd.DataFrame, fields: list[str], multiplier: float = 1.5) 
     """
     Adds one boolean flag column per field (e.g. 'ClosePrice_outlier') and a
     combined 'is_outlier' column (True if ANY field is flagged for that row).
-    Does not drop or modify any existing data -- purely additive.
+    Does not drop or modify any existing data
     """
     df = df.copy()
     combined_flag = pd.Series(False, index=df.index)
